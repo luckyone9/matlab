@@ -1,0 +1,215 @@
+/** khai bao thu vien **/
+#include <ArduinoJson.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <EEPROM.h>
+#include <analogWrite.h>
+#include <PID_v1.h>
+//#include "web1.h"
+#include "index.h"
+#include "ConfigPage.h"
+
+//#include "web1_.h"
+#include <HCSR04.h>
+
+/** Parameter for PID **/
+double Setpoint =20, SigIn = 5, SigOut = 0, SigOutOld = 0;
+double Kp=10, Ki=5, Kd=0;
+PID myPID(&SigIn, &SigOut, &Setpoint, Kp, Ki, Kd, DIRECT);  //Input of PID, Output of PID is the pwm, SetPoint is the reference
+
+/** Router Information**/
+const char* ssid = "VP Nganh DDT";//"TungLam";
+const char* password = "SmartHome789";//"tl512016";
+const char* host = "esp32PIDWater";
+
+/** Some parameter **/
+float H_Bon = 40; //40cm
+float WL = 0;       //Water Level
+float WLmin = 0;
+float WLmax = 40;
+int LedOff = 0;
+int LedOn = 1;
+/** IO control Pin **/
+byte PWMPin = 12;
+
+/** Some Variable **/
+int runPID = 0;
+
+/** Webserver Obj **/
+WebServer server(80);
+
+/** Ultrasonic Sensor Obj **/
+UltraSonicDistanceSensor SRF04Sensor(5, 18);  // Initialize sensor that uses digital pins 13 and 12.
+
+/** Some Function **/
+void handleRoot() {
+  server.send ( 200, "text/html", web_content );
+}
+void handleRoot2() {
+  server.send ( 200, "text/html", para_content );
+}
+
+
+/** Ham khoi dong **/
+unsigned long t0 = 0, t1 = 0;
+void setup() {
+  Serial.begin(115200); 
+  EEPROM.begin(512);
+  delay(10);
+  analogWrite(PWMPin,0);
+  //pinMode(led1, OUTPUT);
+  //pinMode(led2, OUTPUT);
+ 
+  /** Configure and Connect Wifi Modem **/
+  Serial.print("\n");
+  Serial.printf("Connecting to %s\n", ssid);
+  if (String(WiFi.SSID()) != String(ssid)) {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+  }
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(F("."));
+  }
+  Serial.print(F("Connected! IP address: "));
+  Serial.println(WiFi.localIP());
+  MDNS.begin(host);
+  Serial.print(F("Open http://"));
+  Serial.print(host);
+  Serial.print("\n");
+  //Server listen
+  server.on("/", handleRoot);
+  server.on("/para", handleRoot2);
+  //server.on("/PID1", StartPID);
+  //server.on("/PID0", StopPID);
+  server.on("/PID1", HTTP_GET, [](){
+   StartPID();
+  });
+  server.on("/PID0", HTTP_GET, [](){
+   StopPID();
+  });
+  server.on("/init", HTTP_GET, [](){
+   initLoad();
+  });
+  server.on("/WLN", HTTP_GET, [](){
+   server.send(200, "text", String(WL));
+  });
+  server.on("/pW",HTTP_POST,GetPumInfo); //receve info bom bon
+  server.on("/pPID",HTTP_POST,GetPIDInfo); //get PID parameter info 
+  server.on("/pSP",HTTP_POST,GetSPInfo); //get Setpoint parameter info
+  server.begin();
+  Serial.println(F("HTTP server started"));
+  MDNS.addService("http", "tcp", 80);  
+  
+  //for PID
+  //turn the PID on
+  myPID.SetMode(AUTOMATIC);
+  delay(200);
+  ReadUltraSonic(); // chay lan dau, de xac dinh chieu cao ban đầu
+  Serial.println("Muc nuoc ban dau:" + String(WL));
+  t0 = millis();
+  t1 = millis();
+	
+}
+
+/** Chuong Trinh Chinh **/ 
+void loop() {
+  server.handleClient();
+  delay(10);
+  if(runPID == 1){
+    if((millis()-t0)>500){
+      ReadUltraSonic();
+      t0 = millis();  
+    }
+    if((millis()-t1)>101){
+      myPID.Compute();
+      if(SigOutOld != SigOut){
+        SigOutOld = SigOut;
+        analogWrite(PWMPin, SigOut);
+        Serial.println(SigOut);
+        t1 = millis();
+      }
+    }
+  }
+}
+
+
+void ReadUltraSonic(){
+  // Every 500 miliseconds, do a measurement using the sensor and print the distance in centimeters.
+  float k = SRF04Sensor.measureDistanceCm();
+  if(k>0 && k<H_Bon){
+	  WL = H_Bon - k - 1;//1cm: khoang nho nhat SRF04 khong do duoc
+  }
+  SigIn = (double)WL; 
+}
+void StartPID(){
+  runPID = 1;
+  server.send(200, "text", "1");
+}
+void StopPID(){
+  runPID = 0;
+  analogWrite(PWMPin,0);
+  server.send(200, "text", "0");
+}
+
+void initLoad(){
+  String json = "{";
+  json += "\"runPID\":"+String(runPID);
+  json += ", \"WL\":" + String(WL);
+  json += ", \"SP\":" + String(Setpoint);
+  json += ", \"Kp\":" + String(Kp);
+  json += ", \"Ki\":" + String(Ki);
+  json += ", \"Kd\":" + String(Kd);
+  json += "}";
+  server.send(200, "text/json", json);
+  json = String();  
+}
+
+void GetPumInfo(){
+  String data = server.arg("plain");
+  StaticJsonBuffer<200> jBuffer;
+  JsonObject& jObject = jBuffer.parseObject(data);
+  WLmin = jObject["L"];
+  WLmax = jObject["H"];
+  H_Bon = jObject["H_Bon"];
+  //re-send to client
+  StaticJsonBuffer<200> json;
+  JsonObject& root = json.createObject();  //tao bien root cho json
+  root["mi"] = WLmin;
+  root["ma"] = WLmax;
+  root["HB"] = H_Bon;
+  String sendJson;
+  root.printTo(sendJson);
+  ////Serial.println(sendJson);
+  server.send(200, "text/json", sendJson); 
+}
+
+void GetPIDInfo(){
+  String data = server.arg("plain");
+  StaticJsonBuffer<200> jBuffer;
+  JsonObject& jObject = jBuffer.parseObject(data);
+  Kp = (double)jObject["p"];
+  Ki = (double)jObject["i"];
+  Kd = (double)jObject["d"];
+  //re-send to client
+  StaticJsonBuffer<200> json;
+  JsonObject& root = json.createObject();  //tao bien root cho json
+  root["p"] = Kp;
+  root["i"] = Ki;
+  root["d"] = Kd;
+  String sendJson;
+  root.printTo(sendJson);
+  ////Serial.println(sendJson);
+  server.send(200, "text/json", sendJson); 
+}
+
+void GetSPInfo(){
+  String data = server.arg("plain");
+  StaticJsonBuffer<200> jBuffer;
+  JsonObject& jObject = jBuffer.parseObject(data);
+  Setpoint = (double)jObject["sp"];
+  //re-send to client
+  server.send(200, "text", String(Setpoint)); 
+}  
