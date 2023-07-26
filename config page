@@ -1,0 +1,137 @@
+const char para_content[] PROGMEM = R"=====(
+<!--Setting Information Page-->
+<html>
+<head>
+	<meta charset="utf-8">
+	<script>
+		function loadXmlHttp() {
+			if (window.XMLHttpRequest){
+				xh = new XMLHttpRequest();
+			}else if (window.ActiveXObject){
+				try{
+					xh = new ActiveXObject("Microsoft.XMLHTTP");
+				}
+				catch(e){}
+			}
+		}
+	</script>
+</head>
+<body onload = "LoadPage();">
+	<h2>CÀI&nbsp;ĐẶT&nbsp;THÔNG&nbsp;SỐ&nbsp;ĐỀ&nbsp;TÀI&nbsp;</h2>
+	<b>**Thông&nbsp;Số&nbsp;Hệ&nbsp;Bồn&nbsp;Đơn&nbsp;:</b><br>
+		&nbsp;&nbsp;-Level Min:&nbsp;&nbsp;<input type = "text" id = "WLmin" value = "2">cm</input><br>
+		&nbsp;&nbsp;-Level Max:&nbsp;<input type = "text" id = "WLmax" value = "30">cm</input><br>
+		&nbsp;&nbsp;-PumHeight:<input type = "text" id = "H_Bon" value = "40">cm</input>
+		<br><br>
+		*************<button id = "send1" onclick = "sendBomBon();">Send to ESP32</button>**********<br>
+		<br>
+		<br>
+		
+	<b>**Thông&nbsp;số&nbsp;bộ&nbsp;điều&nbsp;khiển&nbsp;PID&nbsp;:</b><br>
+		&nbsp;&nbsp;-Kp:&nbsp;<input type = "text" id = "Kp" value = "10"></input><br>
+		&nbsp;&nbsp;-Ki:&nbsp;&nbsp;<input type = "text" id = "Ki" value = "5"></input><br>
+		&nbsp;&nbsp;-Kd:&nbsp;<input type = "text" id = "Kd" value = "0"></input>
+		<br><br>
+		*************<button id = "send2" onclick = "sendParaPID();">Send to ESP32</button>**********<br>
+		<br>
+		<br>
+	<b>**SetPoint:&nbsp;Giá&nbsp;trị&nbsp;đặt&nbsp;:</b><br>
+		&nbsp;&nbsp;-SP:&nbsp;<input type = "text" id = "SP" value = "20"></input><br><br>
+		*************<button id = "sendSP" onclick = "sendParaSP();">Send to ESP32</button>**********<br>
+		<br>
+		<br>
+			********<a href = "/" >CLICK HERE TO RETURN</a>**********	
+	<script>
+		var ColorOn = "#00FF40";
+		var ColorOff = "";//"#C0C0C0";
+		var LvMin = 2;
+		var LvMax = 30;
+		var H_Bon = 40; // Height of Bon Bom
+		var Kp = 10;
+		var Ki = 5; 
+		var Kd = 0;
+		var SP = 20;
+		function goback() {
+			window.open("/", "_self");
+		}
+		function sendBomBon(){
+			LvMin = Number(document.getElementById("WLmin").value);
+			LvMax = Number(document.getElementById("WLmax").value);
+			H_Bon = Number(document.getElementById("WLmax").value);
+			loadXmlHttp();
+			obj = {"L":LvMin,"H":LvMax,"H_Bon":H_Bon};
+			dbParam = JSON.stringify(obj);
+			xh.open("POST","pW",true);		//Button is url, true is asynchronuos.   
+			check_sendBomBon();
+			xh.setRequestHeader("json", "-X POST -d");
+			xh.send(dbParam);
+		}
+		function check_sendBomBon(){
+			xh.onreadystatechange = function(){	
+				if (xh.readyState == 4){	
+					if(xh.status == 200) {	
+						var res = JSON.parse(xh.responseText);	
+						mi = res.mi;
+						ma = res.ma;
+						heb = res.HB
+						corlor = (mi==LvMin && ma == LvMax && heb == H_Bon)?ColorOn:ColorOff;
+						document.getElementById("send1").style.backgroundColor = corlor;
+					}	
+				}
+		
+			}
+		}
+		function sendParaPID(){
+			Kp = Number(document.getElementById("Kp").value);
+			Ki = Number(document.getElementById("Ki").value);
+			Kd = Number(document.getElementById("Kd").value);
+			loadXmlHttp();
+			obj = {"p":Kp,"i":Ki,"d":Kd};
+			dbParam = JSON.stringify(obj);
+			xh.open("POST","pPID",true);		//Button is url, true is asynchronuos.   
+			check_sendParaPID();
+			xh.setRequestHeader("json", "-X POST -d");
+			xh.send(dbParam);
+		}
+		function check_sendParaPID(){
+			xh.onreadystatechange = function(){	
+				if (xh.readyState == 4){	
+					if(xh.status == 200) {	
+						var res = JSON.parse(xh.responseText);	
+						p = res.p;
+						i = res.i;
+						d = res.d
+						corlor = (p==Kp && i == Ki && d == Kd)?ColorOn:ColorOff;
+						document.getElementById("send2").style.backgroundColor = corlor;
+					}	
+				}
+		
+			}
+		}
+		function sendParaSP(){
+			SP = Number(document.getElementById("SP").value);
+			loadXmlHttp();
+			obj = {"sp":SP};
+			dbParam = JSON.stringify(obj);
+			xh.open("POST","pSP",true);		//Button is url, true is asynchronuos.   
+			check_sendParaSP();
+			xh.setRequestHeader("json", "-X POST -d");
+			xh.send(dbParam);
+		}
+		function check_sendParaSP(){
+			xh.onreadystatechange = function(){	
+				if (xh.readyState == 4){	
+					if(xh.status == 200) {	
+						sp_ = Number(xh.responseText);
+						corlor = (sp_==SP)?ColorOn:ColorOff;
+						document.getElementById("sendSP").style.backgroundColor = corlor;
+					}	
+				}
+		
+			}
+		}
+		
+	</script>
+</body>
+</html>
+)=====";
